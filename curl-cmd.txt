@@ -1,0 +1,15 @@
+curl 'https://www.kinoheld.de/ajax/getShowsForCinemas?cinemaIds[]=3625&lang=en' \
+        --globoff \
+        --compressed \
+        -H 'User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:144.0) Gecko/20100101 Firefox/144.0' \
+        -H 'Accept: application/json, text/plain, */*' \
+        -H 'Accept-Language: en-US,en;q=0.7,de-DE;q=0.3' \
+        -H 'Accept-Encoding: gzip, deflate, br, zstd' \
+        -H 'Connection: keep-alive' \
+        -H 'Referer: https://www.kinoheld.de/cinema/tuebingen/kino-museum-tuebingen/shows/movies?appView=1' \
+        -H 'Sec-Fetch-Dest: empty' \
+        -H 'Sec-Fetch-Mode: cors' \
+        -H 'Sec-Fetch-Site: same-origin' \
+        -H 'DNT: 1' \
+        -H 'Sec-GPC: 1' \
+        -H 'TE: trailers'
