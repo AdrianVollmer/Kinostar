@@ -3,12 +3,16 @@
 A terminal-based movie showtime viewer for Kinoheld using the Textual
 library.
 
+![Asciinema Demo of
+Kinostar](https://github.com/AdrianVollmer/Kinostar/blob/main/docs/kinostar.gif)
+
 ## Features
 
 - Displays current movie showtimes fetched from Kinoheld API
 - Multiple theater support: configure and view showtimes for multiple
   theaters simultaneously
-- **Theater search**: search for theaters by city name to find cinema IDs
+- **Theater search**: search for theaters by city name to find cinema
+  IDs
 - Flexible grouping: toggle between grouping by theater or by movie
 - Clean, scrollable interface organized by theater/movie and date
 - Shows movie titles, durations, and all available showtimes
@@ -113,11 +117,11 @@ The application:
 3.  Groups showtimes by movie
 4.  Displays everything in a clean, scrollable interface with flexible
     grouping:
-    - **Group by Theater** (default): Shows theater sections, with movies
-      listed under each theater
+    - **Group by Theater** (default): Shows theater sections, with
+      movies listed under each theater
     - **Group by Movie**: Shows movies grouped together, with each
-      theater's showtimes displayed separately as "Movie Name [Theater
-      Name]"
+      theater's showtimes displayed separately as "Movie Name \[Theater
+      Name\]"
 
 ## Data Source
 
