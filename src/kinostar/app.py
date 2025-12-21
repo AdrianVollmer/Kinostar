@@ -117,10 +117,12 @@ class MovieDetailModal(ModalScreen[None]):
     #detail-dialog {
         padding: 2 4;
         width: 90;
-        height: auto;
-        max-height: 90%;
+        height: 80%;
         border: thick $accent;
         background: $surface;
+        layout: grid;
+        grid-size: 1 3;
+        grid-rows: auto 1fr auto;
     }
 
     #detail-title {
@@ -128,19 +130,23 @@ class MovieDetailModal(ModalScreen[None]):
         color: $accent;
         margin-bottom: 1;
         text-align: center;
-        height: auto;
+    }
+
+    #detail-scroll {
+        width: 100%;
+        overflow-y: auto;
     }
 
     #detail-content {
-        padding: 0 1;
         width: 100%;
         height: auto;
-        margin-bottom: 1;
     }
 
     #detail-close {
         width: 100%;
         height: auto;
+        min-height: 4;
+        margin-top: 1;
     }
     """
 
@@ -225,10 +231,9 @@ class MovieDetailModal(ModalScreen[None]):
                     f"\nShowing: {date_objs[0].strftime('%a %m/%d')} to {date_objs[-1].strftime('%a %m/%d')}"
                 )
 
-            content = Static("\n".join(details), id="detail-content")
-            content.can_focus = True
-            yield content
-            yield Button("Close", variant="primary", id="detail-close")
+            with VerticalScroll(id="detail-scroll"):
+                yield Static("\n".join(details), id="detail-content")
+            yield Button("Back", variant="primary", id="detail-close")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle close button."""
@@ -347,10 +352,12 @@ class TheaterResultsModal(ModalScreen[None]):
     #results-dialog {
         padding: 2 4;
         width: 90;
-        height: auto;
-        max-height: 90%;
+        height: 80%;
         border: thick $accent;
         background: $surface;
+        layout: grid;
+        grid-size: 1 3;
+        grid-rows: auto 1fr auto;
     }
 
     #results-title {
@@ -360,16 +367,21 @@ class TheaterResultsModal(ModalScreen[None]):
         text-align: center;
     }
 
+    #results-scroll {
+        width: 100%;
+        overflow-y: auto;
+    }
+
     #results-content {
-        padding: 0 1;
         width: 100%;
         height: auto;
-        max-height: 30;
-        margin-bottom: 1;
     }
 
     #results-close {
         width: 100%;
+        height: auto;
+        min-height: 4;
+        margin-top: 1;
     }
     """
 
@@ -383,7 +395,8 @@ class TheaterResultsModal(ModalScreen[None]):
             yield Label(f"Theater Search Results for '{self.city}'", id="results-title")
 
             if not self.results:
-                yield Label("No theaters found.", id="results-content")
+                with VerticalScroll(id="results-scroll"):
+                    yield Label("No theaters found.", id="results-content")
             else:
                 content_lines = []
                 content_lines.append(f"Found {len(self.results)} theater(s):\n")
@@ -399,13 +412,15 @@ class TheaterResultsModal(ModalScreen[None]):
                         city_info = result.get("city", {})
                         city_name = city_info.get("name", "")
 
-                        content_lines.append(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                        content_lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
                         content_lines.append(f"Name: {name}")
                         content_lines.append(f"Cinema ID: {cinema_id}")
                         if street:
                             content_lines.append(f"Address: {street}")
                         if postcode or city_name:
-                            content_lines.append(f"Location: {postcode} {city_name}".strip())
+                            content_lines.append(
+                                f"Location: {postcode} {city_name}".strip()
+                            )
 
                         is_open_air = result.get("isOpenAir", False)
                         is_drive_in = result.get("isDriveIn", False)
@@ -420,20 +435,21 @@ class TheaterResultsModal(ModalScreen[None]):
                         city_name = result.get("name", "Unknown")
                         city_id = result.get("id", "N/A")
                         postcodes = result.get("postcodes", [])
-                        postcode_list = ", ".join([p.get("postcode", "") for p in postcodes[:3]])
+                        postcode_list = ", ".join(
+                            [p.get("postcode", "") for p in postcodes[:3]]
+                        )
 
-                        content_lines.append(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                        content_lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
                         content_lines.append(f"City: {city_name}")
                         content_lines.append(f"City ID: {city_id}")
                         if postcode_list:
                             content_lines.append(f"Postcodes: {postcode_list}")
                         content_lines.append("")
 
-                content = Static("\n".join(content_lines), id="results-content")
-                content.can_focus = True
-                yield content
+                with VerticalScroll(id="results-scroll"):
+                    yield Static("\n".join(content_lines), id="results-content")
 
-            yield Button("Close", variant="primary", id="results-close")
+            yield Button("Back", variant="primary", id="results-close")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle close button."""
@@ -536,7 +552,10 @@ class MovieShowtimesApp(App[None]):
                 }
 
     def _process_theater_shows(
-        self, theater: Theater, shows_data: dict[str, Any], movies_data: dict[str, dict[str, Any]]
+        self,
+        theater: Theater,
+        shows_data: dict[str, Any],
+        movies_data: dict[str, dict[str, Any]],
     ) -> dict[str, dict[str, Any]]:
         """Process shows for a theater and return movies dict."""
         if not shows_data or "shows" not in shows_data:
@@ -642,7 +661,9 @@ class MovieShowtimesApp(App[None]):
     def _render_by_movie(self, scroll_container: VerticalScroll) -> None:
         """Render UI grouped by movie."""
         # Collect all movies across all theaters
-        all_movies: dict[str, list[tuple[str, Theater, dict[str, Any]]]] = defaultdict(list)
+        all_movies: dict[str, list[tuple[str, Theater, dict[str, Any]]]] = defaultdict(
+            list
+        )
 
         for theater_name, theater_info in self.theaters_data.items():
             theater = theater_info["theater"]
@@ -670,7 +691,9 @@ class MovieShowtimesApp(App[None]):
         else:
             sorted_movie_names = sorted(
                 all_movies.keys(),
-                key=lambda name: sum(data[2]["total_showtimes"] for data in all_movies[name]),
+                key=lambda name: sum(
+                    data[2]["total_showtimes"] for data in all_movies[name]
+                ),
                 reverse=True,
             )
 
