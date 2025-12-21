@@ -2,7 +2,6 @@
 """Movie showtime viewer using Textual."""
 
 import asyncio
-import json
 from collections import defaultdict
 from datetime import datetime
 from typing import Any
@@ -210,6 +209,16 @@ class MovieDetailModal(ModalScreen[None]):
                 if len(movie_details["actors"]) > 4:
                     actors += ", ..."
                 details.append(f"Cast: {actors}")
+
+            if movie_details.get("trailers"):
+                trailers = movie_details["trailers"]
+                if trailers:
+                    details.append("\nTrailers:")
+                    for trailer in trailers:
+                        trailer_url = trailer.get("url", "")
+                        trailer_format = trailer.get("format", "").upper()
+                        if trailer_url:
+                            details.append(f"  • {trailer_format}: {trailer_url}")
 
             details.append(f"\nTotal Showtimes: {self.movie_data['total_showtimes']}")
 
