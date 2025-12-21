@@ -281,6 +281,7 @@ class MovieShowtimesApp(App[None]):
     BINDINGS = [
         ("q", "quit", "Quit"),
         ("s", "toggle_sort", "Toggle Sort"),
+        ("g", "toggle_grouping", "Toggle Grouping"),
     ]
 
     def __init__(self) -> None:
@@ -290,6 +291,7 @@ class MovieShowtimesApp(App[None]):
         self.title = "Kinostar - Showtimes"
         self.theaters_data: dict[str, dict[str, Any]] = {}
         self.sort_by_release = False
+        self.group_by_theater = True
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -345,6 +347,42 @@ class MovieShowtimesApp(App[None]):
                     "movies_data": data.get("movies", {}),
                 }
 
+    def _process_theater_shows(
+        self, theater: Theater, shows_data: dict[str, Any], movies_data: dict[str, dict[str, Any]]
+    ) -> dict[str, dict[str, Any]]:
+        """Process shows for a theater and return movies dict."""
+        if not shows_data or "shows" not in shows_data:
+            return {}
+
+        shows = shows_data["shows"]
+        if not shows:
+            return {}
+
+        movies: dict[str, dict[str, Any]] = {}
+        for show in shows:
+            movie_name = show["name"]
+
+            if self.config.should_filter_movie(movie_name, theater):
+                continue
+
+            if movie_name not in movies:
+                movie_id = str(show.get("movieId", ""))
+                movie_details = movies_data.get(movie_id, {})
+                released = movie_details.get("released") or show.get("released") or ""
+                movies[movie_name] = {
+                    "name": movie_name,
+                    "duration": show["duration"],
+                    "showtimes_by_date": defaultdict(list),
+                    "total_showtimes": 0,
+                    "released": released,
+                    "movieId": movie_id,
+                    "details": movie_details,
+                }
+            movies[movie_name]["showtimes_by_date"][show["date"]].append(show)
+            movies[movie_name]["total_showtimes"] += 1
+
+        return movies
+
     def refresh_ui(self) -> None:
         """Refresh the UI with current sort order."""
         scroll_container = self.query_one("#content", VerticalScroll)
@@ -359,6 +397,13 @@ class MovieShowtimesApp(App[None]):
             scroll_container.mount(Label("No theaters configured."))
             return
 
+        if self.group_by_theater:
+            self._render_by_theater(scroll_container)
+        else:
+            self._render_by_movie(scroll_container)
+
+    def _render_by_theater(self, scroll_container: VerticalScroll) -> None:
+        """Render UI grouped by theater."""
         first_table = None
 
         for theater_name, theater_info in self.theaters_data.items():
@@ -375,34 +420,11 @@ class MovieShowtimesApp(App[None]):
                 scroll_container.mount(Label(error_msg))
                 continue
 
-            shows = shows_data["shows"]
+            movies = self._process_theater_shows(theater, shows_data, movies_data)
 
-            if not shows:
+            if not movies:
                 scroll_container.mount(Label("No showtimes available."))
                 continue
-
-            movies: dict[str, dict[str, Any]] = {}
-            for show in shows:
-                movie_name = show["name"]
-
-                if self.config.should_filter_movie(movie_name, theater):
-                    continue
-
-                if movie_name not in movies:
-                    movie_id = str(show.get("movieId", ""))
-                    movie_details = movies_data.get(movie_id, {})
-                    released = movie_details.get("released") or show.get("released") or ""
-                    movies[movie_name] = {
-                        "name": movie_name,
-                        "duration": show["duration"],
-                        "showtimes_by_date": defaultdict(list),
-                        "total_showtimes": 0,
-                        "released": released,
-                        "movieId": movie_id,
-                        "details": movie_details,
-                    }
-                movies[movie_name]["showtimes_by_date"][show["date"]].append(show)
-                movies[movie_name]["total_showtimes"] += 1
 
             if self.sort_by_release:
                 sorted_movies = sorted(
@@ -429,9 +451,72 @@ class MovieShowtimesApp(App[None]):
         if first_table is not None:
             self.set_focus(first_table)
 
+    def _render_by_movie(self, scroll_container: VerticalScroll) -> None:
+        """Render UI grouped by movie."""
+        # Collect all movies across all theaters
+        all_movies: dict[str, list[tuple[str, Theater, dict[str, Any]]]] = defaultdict(list)
+
+        for theater_name, theater_info in self.theaters_data.items():
+            theater = theater_info["theater"]
+            shows_data = theater_info["shows_data"]
+            movies_data = theater_info["movies_data"]
+
+            movies = self._process_theater_shows(theater, shows_data, movies_data)
+
+            for movie_name, movie_data in movies.items():
+                all_movies[movie_name].append((theater_name, theater, movie_data))
+
+        if not all_movies:
+            scroll_container.mount(Label("No showtimes available."))
+            return
+
+        # Sort movies
+        if self.sort_by_release:
+            sorted_movie_names = sorted(
+                all_movies.keys(),
+                key=lambda name: max(
+                    (data[2]["released"] or "" for data in all_movies[name]), default=""
+                ),
+                reverse=True,
+            )
+        else:
+            sorted_movie_names = sorted(
+                all_movies.keys(),
+                key=lambda name: sum(data[2]["total_showtimes"] for data in all_movies[name]),
+                reverse=True,
+            )
+
+        first_table = None
+
+        for movie_name in sorted_movie_names:
+            theaters_for_movie = all_movies[movie_name]
+
+            # Sort theaters alphabetically for consistent display
+            theaters_for_movie.sort(key=lambda x: x[0])
+
+            for theater_name, theater, movie_data in theaters_for_movie:
+                display_name = f"{movie_name} [{theater_name}]"
+                table = MovieTable(
+                    display_name,
+                    movie_data["duration"],
+                    dict(movie_data["showtimes_by_date"]),
+                    movie_data,
+                )
+                scroll_container.mount(table)
+                if first_table is None:
+                    first_table = table
+
+        if first_table is not None:
+            self.set_focus(first_table)
+
     def action_toggle_sort(self) -> None:
         """Toggle between sorting by showtimes and release date."""
         self.sort_by_release = not self.sort_by_release
+        self.refresh_ui()
+
+    def action_toggle_grouping(self) -> None:
+        """Toggle between grouping by theater and grouping by movie."""
+        self.group_by_theater = not self.group_by_theater
         self.refresh_ui()
 
 

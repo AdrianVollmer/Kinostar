@@ -8,7 +8,8 @@ library.
 - Displays current movie showtimes fetched from Kinoheld API
 - Multiple theater support: configure and view showtimes for multiple
   theaters simultaneously
-- Clean, scrollable interface organized by theater and date
+- Flexible grouping: toggle between grouping by theater or by movie
+- Clean, scrollable interface organized by theater/movie and date
 - Shows movie titles, durations, and all available showtimes
 - Detailed movie information (description, cast, director, genres,
   ratings)
@@ -39,6 +40,7 @@ uv run kinoheld
 
 - `q` - Quit the application
 - `s` - Toggle sort (by showtimes or release date)
+- `g` - Toggle grouping (by theater or by movie)
 - `Tab` / `Shift+Tab` - Navigate between movies
 - `Enter` or Click - View movie details
 - `Escape` - Close detail modal
@@ -94,8 +96,13 @@ The application:
     theaters
 2.  Organizes shows by theater and date
 3.  Groups showtimes by movie
-4.  Displays everything in a clean, scrollable interface with theater
-    sections
+4.  Displays everything in a clean, scrollable interface with flexible
+    grouping:
+    - **Group by Theater** (default): Shows theater sections, with movies
+      listed under each theater
+    - **Group by Movie**: Shows movies grouped together, with each
+      theater's showtimes displayed separately as "Movie Name [Theater
+      Name]"
 
 ## Data Source
 
