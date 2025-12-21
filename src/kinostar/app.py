@@ -2,6 +2,7 @@
 """Movie showtime viewer using Textual."""
 
 import asyncio
+import json
 from collections import defaultdict
 from datetime import datetime
 from typing import Any
@@ -11,7 +12,7 @@ from textual import events
 from textual.app import App, ComposeResult
 from textual.containers import Container, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, DataTable, Footer, Header, Label, Static
+from textual.widgets import Button, DataTable, Footer, Header, Input, Label, Static
 
 from .config import Config, Theater
 
@@ -259,6 +260,192 @@ class TheaterHeader(Static):
         super().__init__(theater_name)
 
 
+class SearchCityModal(ModalScreen[str | None]):
+    """Modal screen to search for theaters by city."""
+
+    DEFAULT_CSS = """
+    SearchCityModal {
+        align: center middle;
+    }
+
+    #search-dialog {
+        padding: 2 4;
+        width: 60;
+        height: auto;
+        border: thick $accent;
+        background: $surface;
+    }
+
+    #search-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+        text-align: center;
+    }
+
+    #search-input {
+        margin: 1 0;
+        width: 100%;
+    }
+
+    #search-buttons {
+        width: 100%;
+        height: auto;
+        align: center middle;
+        margin-top: 1;
+    }
+
+    #search-buttons Button {
+        margin: 0 1;
+    }
+    """
+
+    def compose(self) -> ComposeResult:
+        with Container(id="search-dialog"):
+            yield Label("Search for Theaters", id="search-title")
+            yield Label("Enter city name:")
+            yield Input(placeholder="e.g., Tübingen, Berlin", id="search-input")
+            with Container(id="search-buttons"):
+                yield Button("Search", variant="primary", id="search-btn")
+                yield Button("Cancel", id="cancel-btn")
+
+    def on_mount(self) -> None:
+        """Focus the input when the modal opens."""
+        self.query_one("#search-input", Input).focus()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button presses."""
+        if event.button.id == "search-btn":
+            city_input = self.query_one("#search-input", Input)
+            city = city_input.value.strip()
+            if city:
+                self.dismiss(city)
+        elif event.button.id == "cancel-btn":
+            self.dismiss(None)
+
+    def on_key(self, event: events.Key) -> None:
+        """Handle key presses."""
+        if event.key == "escape":
+            self.dismiss(None)
+            event.stop()
+        elif event.key == "enter":
+            city_input = self.query_one("#search-input", Input)
+            city = city_input.value.strip()
+            if city:
+                self.dismiss(city)
+            event.stop()
+
+
+class TheaterResultsModal(ModalScreen[None]):
+    """Modal screen to display search results."""
+
+    DEFAULT_CSS = """
+    TheaterResultsModal {
+        align: center middle;
+    }
+
+    #results-dialog {
+        padding: 2 4;
+        width: 90;
+        height: auto;
+        max-height: 90%;
+        border: thick $accent;
+        background: $surface;
+    }
+
+    #results-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+        text-align: center;
+    }
+
+    #results-content {
+        padding: 0 1;
+        width: 100%;
+        height: auto;
+        max-height: 30;
+        margin-bottom: 1;
+    }
+
+    #results-close {
+        width: 100%;
+    }
+    """
+
+    def __init__(self, results: list[dict[str, Any]], city: str) -> None:
+        super().__init__()
+        self.results = results
+        self.city = city
+
+    def compose(self) -> ComposeResult:
+        with Container(id="results-dialog"):
+            yield Label(f"Theater Search Results for '{self.city}'", id="results-title")
+
+            if not self.results:
+                yield Label("No theaters found.", id="results-content")
+            else:
+                content_lines = []
+                content_lines.append(f"Found {len(self.results)} theater(s):\n")
+
+                for result in self.results:
+                    result_type = result.get("__typename", "")
+
+                    if result_type == "Cinema":
+                        name = result.get("name", "Unknown")
+                        cinema_id = result.get("id", "N/A")
+                        street = result.get("street", "")
+                        postcode = result.get("postcode", {}).get("postcode", "")
+                        city_info = result.get("city", {})
+                        city_name = city_info.get("name", "")
+
+                        content_lines.append(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                        content_lines.append(f"Name: {name}")
+                        content_lines.append(f"Cinema ID: {cinema_id}")
+                        if street:
+                            content_lines.append(f"Address: {street}")
+                        if postcode or city_name:
+                            content_lines.append(f"Location: {postcode} {city_name}".strip())
+
+                        is_open_air = result.get("isOpenAir", False)
+                        is_drive_in = result.get("isDriveIn", False)
+                        if is_open_air:
+                            content_lines.append("Type: Open Air")
+                        if is_drive_in:
+                            content_lines.append("Type: Drive-In")
+
+                        content_lines.append("")
+
+                    elif result_type == "City":
+                        city_name = result.get("name", "Unknown")
+                        city_id = result.get("id", "N/A")
+                        postcodes = result.get("postcodes", [])
+                        postcode_list = ", ".join([p.get("postcode", "") for p in postcodes[:3]])
+
+                        content_lines.append(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                        content_lines.append(f"City: {city_name}")
+                        content_lines.append(f"City ID: {city_id}")
+                        if postcode_list:
+                            content_lines.append(f"Postcodes: {postcode_list}")
+                        content_lines.append("")
+
+                content = Static("\n".join(content_lines), id="results-content")
+                content.can_focus = True
+                yield content
+
+            yield Button("Close", variant="primary", id="results-close")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle close button."""
+        self.dismiss()
+
+    def on_key(self, event: events.Key) -> None:
+        """Handle escape key."""
+        if event.key == "escape":
+            self.dismiss()
+            event.stop()
+
+
 class MovieShowtimesApp(App[None]):
     """Textual app to display movie showtimes."""
 
@@ -282,6 +469,7 @@ class MovieShowtimesApp(App[None]):
         ("q", "quit", "Quit"),
         ("s", "toggle_sort", "Toggle Sort"),
         ("g", "toggle_grouping", "Toggle Grouping"),
+        ("f", "search_theaters", "Search Theaters"),
     ]
 
     def __init__(self) -> None:
@@ -518,6 +706,142 @@ class MovieShowtimesApp(App[None]):
         """Toggle between grouping by theater and grouping by movie."""
         self.group_by_theater = not self.group_by_theater
         self.refresh_ui()
+
+    async def search_theaters_by_city(self, city: str) -> list[dict[str, Any]]:
+        """Search for theaters using the Kinoheld GraphQL API."""
+        url = "https://next-live.kinoheld.de/graphql"
+
+        graphql_query = """
+    query FetchSearchForAutoSuggest($query: String, $limit: Int! = 25, $types: [SearchTypeEnum!]) {
+  search(query: $query, limit: $limit, types: $types) {
+    __typename
+    ... on Movie {
+      id
+      title
+      urlSlug
+      duration
+      released
+      genres {
+        ...GenreAttributes
+      }
+      thumbnailImage {
+        ...ImageAttributes
+      }
+    }
+    ... on Person {
+      name
+      urlSlug
+      profileImage {
+        ...ImageAttributes
+      }
+      actedIn {
+        paginatorInfo {
+          total
+        }
+      }
+      directedIn {
+        paginatorInfo {
+          total
+        }
+      }
+    }
+    ... on City {
+      id
+      ...CityAttributes
+      postcodes {
+        postcode
+      }
+    }
+    ... on Cinema {
+      id
+      name
+      urlSlug
+      street
+      isOpenAir
+      isDriveIn
+      isStationary
+      postcode {
+        postcode
+      }
+      city {
+        id
+        urlSlug
+        name
+      }
+      thumbnailImage {
+        ...ImageAttributes
+      }
+    }
+  }
+}
+
+    fragment GenreAttributes on Genre {
+  id
+  name
+  urlSlug
+}
+
+
+    fragment ImageAttributes on Image {
+  id
+  url
+  colors(limit: 3)
+  width
+  height
+}
+
+
+    fragment CityAttributes on City {
+  id
+  distance
+  latitude
+  urlSlug
+  longitude
+  name
+  timezone
+}
+    """
+
+        variables = {"query": city, "limit": 25, "types": ["CINEMA", "CITY"]}
+
+        payload = {
+            "query": graphql_query,
+            "variables": variables,
+            "operationName": "FetchSearchForAutoSuggest",
+        }
+
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; WOW64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.6925.99 Safari/537.36 Edg/133.0.3350.106",
+            "Accept": "application/graphql-response+json, application/json",
+            "Accept-Encoding": "gzip, deflate, br, zstd",
+            "Referer": "https://www.kinoheld.de/",
+            "Content-Type": "application/json",
+            "Origin": "https://www.kinoheld.de",
+            "Connection": "keep-alive",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-site",
+        }
+
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(url, json=payload, headers=headers)
+                response.raise_for_status()
+                data = response.json()
+                results = data.get("data", {}).get("search", [])
+                return results
+            except Exception as e:
+                return [{"error": str(e)}]
+
+    def action_search_theaters(self) -> None:
+        """Open the search modal to find theaters by city."""
+
+        async def handle_search(city: str | None) -> None:
+            if city:
+                results = await self.search_theaters_by_city(city)
+                self.push_screen(TheaterResultsModal(results, city))
+
+        self.push_screen(SearchCityModal(), handle_search)
 
 
 def main() -> None:

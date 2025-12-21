@@ -8,6 +8,7 @@ library.
 - Displays current movie showtimes fetched from Kinoheld API
 - Multiple theater support: configure and view showtimes for multiple
   theaters simultaneously
+- **Theater search**: search for theaters by city name to find cinema IDs
 - Flexible grouping: toggle between grouping by theater or by movie
 - Clean, scrollable interface organized by theater/movie and date
 - Shows movie titles, durations, and all available showtimes
@@ -41,10 +42,24 @@ uv run kinoheld
 - `q` - Quit the application
 - `s` - Toggle sort (by showtimes or release date)
 - `g` - Toggle grouping (by theater or by movie)
+- `f` - Search for theaters by city
 - `Tab` / `Shift+Tab` - Navigate between movies
 - `Enter` or Click - View movie details
 - `Escape` - Close detail modal
 - Arrow keys / Page Up/Page Down - Scroll through showtimes
+
+## Theater Search
+
+Press `f` to search for theaters by city name. This opens a search modal
+where you can enter a city name (e.g., "Tübingen", "Berlin"). The app
+will query the Kinoheld database and display matching theaters with
+their cinema IDs, addresses, and other details.
+
+To add a found theater to your configuration:
+
+1.  Note the **Cinema ID** from the search results
+2.  Edit your config file at `~/.config/kinostar/config.toml`
+3.  Add a new `[[theaters]]` section with the cinema ID and a name
 
 ## Configuration
 
