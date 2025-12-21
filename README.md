@@ -6,12 +6,14 @@ library.
 ## Features
 
 - Displays current movie showtimes fetched from Kinoheld API
-- Clean, scrollable interface organized chronologically by date
+- Multiple theater support: configure and view showtimes for multiple
+  theaters simultaneously
+- Clean, scrollable interface organized by theater and date
 - Shows movie titles, durations, and all available showtimes
 - Detailed movie information (description, cast, director, genres,
   ratings)
 - Displays special flags (e.g., OMdU for original with subtitles)
-- Configurable theaters and filters
+- Configurable theaters and filters (global and per-theater)
 - Keyboard shortcuts for easy navigation
 - Focus navigation between movies
 - Modal detail view for each movie
@@ -20,6 +22,10 @@ library.
 
 This project uses `uv` for dependency management. The dependencies will
 be automatically installed when you run the application.
+
+``` bash
+uv tool install .
+```
 
 ## Usage
 
@@ -38,14 +44,58 @@ uv run kinoheld
 - `Escape` - Close detail modal
 - Arrow keys / Page Up/Page Down - Scroll through showtimes
 
+## Configuration
+
+The app uses a configuration file located at
+`~/.config/kinostar/config.toml` (or
+`$XDG_CONFIG_HOME/kinostar/config.toml`).
+
+On first run, a default configuration file will be created
+automatically. You can edit this file to add multiple theaters.
+
+### Example Configuration
+
+``` toml
+# Global filter: regex pattern to exclude movies by title (applied to all theaters)
+# global_filter = "(?i)(sneak|preview)"
+
+# Theater configurations
+[[theaters]]
+name = "Kino Museum"
+cinema_id = 3625
+default = true
+# Optional: filter specific to this theater
+# filter = "(?i)opera"
+
+# Add more theaters
+[[theaters]]
+name = "Arsenal Kino"
+cinema_id = 1234
+# filter = "(?i)some_pattern"
+```
+
+### Configuration Options
+
+- **`global_filter`**: (Optional) Regex pattern to exclude movies from
+  all theaters
+- **`theaters`**: Array of theater configurations
+  - **`name`**: Display name for the theater
+  - **`cinema_id`**: Kinoheld cinema ID (find this in the Kinoheld URL)
+  - **`default`**: (Optional) Mark as default theater (currently unused,
+    all theaters are displayed)
+  - **`filter`**: (Optional) Regex pattern to exclude movies from this
+    specific theater
+
 ## How It Works
 
 The application:
 
-1.  Fetches showtime data from the Kinoheld API
-2.  Organizes shows by date
+1.  Fetches showtime data from the Kinoheld API for all configured
+    theaters
+2.  Organizes shows by theater and date
 3.  Groups showtimes by movie
-4.  Displays everything in a clean, scrollable interface
+4.  Displays everything in a clean, scrollable interface with theater
+    sections
 
 ## Data Source
 

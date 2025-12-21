@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Movie showtime viewer using Textual."""
 
+import asyncio
 from collections import defaultdict
 from datetime import datetime
 from typing import Any
@@ -12,7 +13,7 @@ from textual.containers import Container, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Footer, Header, Label, Static
 
-from .config import Config
+from .config import Config, Theater
 
 
 class MovieTable(Static, can_focus=True):
@@ -239,6 +240,25 @@ class MovieDetailModal(ModalScreen[None]):
             event.stop()
 
 
+class TheaterHeader(Static):
+    """Widget to display theater name as a section header."""
+
+    DEFAULT_CSS = """
+    TheaterHeader {
+        width: 100%;
+        height: auto;
+        margin: 2 0 1 0;
+        padding: 1 2;
+        background: $primary;
+        color: $text;
+        text-style: bold;
+    }
+    """
+
+    def __init__(self, theater_name: str) -> None:
+        super().__init__(theater_name)
+
+
 class MovieShowtimesApp(App[None]):
     """Textual app to display movie showtimes."""
 
@@ -265,11 +285,10 @@ class MovieShowtimesApp(App[None]):
 
     def __init__(self) -> None:
         self.config = Config.load()
-        self.theater = self.config.get_default_theater()
+        self.theaters = self.config.theaters
         super().__init__()
-        self.title = f"{self.theater.name} - Showtimes"
-        self.shows_data: dict[str, Any] | None = None
-        self.movies_data: dict[str, dict[str, Any]] = {}
+        self.title = "Kinostar - Showtimes"
+        self.theaters_data: dict[str, dict[str, Any]] = {}
         self.sort_by_release = False
 
     def compose(self) -> ComposeResult:
@@ -283,11 +302,12 @@ class MovieShowtimesApp(App[None]):
         await self.load_showtimes()
         self.refresh_ui()
 
-    async def load_showtimes(self) -> None:
-        """Fetch showtimes from the API."""
-
+    async def load_showtimes_for_theater(
+        self, client: httpx.AsyncClient, theater: Theater
+    ) -> tuple[Theater, dict[str, Any]]:
+        """Fetch showtimes for a single theater."""
         url = "https://www.kinoheld.de/ajax/getShowsForCinemas"
-        params = {"cinemaIds[]": str(self.theater.cinema_id), "lang": "de"}
+        params = {"cinemaIds[]": str(theater.cinema_id), "lang": "de"}
         headers = {
             "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:144.0) Gecko/20100101 Firefox/144.0",
             "Accept": "application/json, text/plain, */*",
@@ -301,16 +321,29 @@ class MovieShowtimesApp(App[None]):
             "TE": "trailers",
         }
 
+        try:
+            response = await client.get(url, params=params, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+            return theater, data
+        except Exception as e:
+            return theater, {"shows": [], "error": str(e), "movies": {}}
+
+    async def load_showtimes(self) -> None:
+        """Fetch showtimes from the API for all theaters."""
         async with httpx.AsyncClient() as client:
-            try:
-                response = await client.get(url, params=params, headers=headers)
-                response.raise_for_status()
-                data = response.json()
-                self.shows_data = data
-                self.movies_data = data.get("movies", {})
-            except Exception as e:
-                self.shows_data = {"shows": [], "error": str(e)}
-                self.movies_data = {}
+            tasks = [
+                self.load_showtimes_for_theater(client, theater)
+                for theater in self.theaters
+            ]
+            results = await asyncio.gather(*tasks)
+
+            for theater, data in results:
+                self.theaters_data[theater.name] = {
+                    "theater": theater,
+                    "shows_data": data,
+                    "movies_data": data.get("movies", {}),
+                }
 
     def refresh_ui(self) -> None:
         """Refresh the UI with current sort order."""
@@ -322,64 +355,76 @@ class MovieShowtimesApp(App[None]):
         except Exception:
             scroll_container.remove_children()
 
-        if not self.shows_data or "shows" not in self.shows_data:
-            error_msg = "No showtimes available."
-            if self.shows_data and "error" in self.shows_data:
-                error_msg += f"\nError: {self.shows_data['error']}"
-            scroll_container.mount(Label(error_msg))
+        if not self.theaters_data:
+            scroll_container.mount(Label("No theaters configured."))
             return
-
-        shows = self.shows_data["shows"]
-
-        if not shows:
-            scroll_container.mount(Label("No showtimes available."))
-            return
-
-        movies: dict[str, dict[str, Any]] = {}
-        for show in shows:
-            movie_name = show["name"]
-
-            if self.config.should_filter_movie(movie_name, self.theater):
-                continue
-
-            if movie_name not in movies:
-                movie_id = str(show.get("movieId", ""))
-                movie_details = self.movies_data.get(movie_id, {})
-                released = movie_details.get("released") or show.get("released") or ""
-                movies[movie_name] = {
-                    "name": movie_name,
-                    "duration": show["duration"],
-                    "showtimes_by_date": defaultdict(list),
-                    "total_showtimes": 0,
-                    "released": released,
-                    "movieId": movie_id,
-                    "details": movie_details,
-                }
-            movies[movie_name]["showtimes_by_date"][show["date"]].append(show)
-            movies[movie_name]["total_showtimes"] += 1
-
-        if self.sort_by_release:
-            sorted_movies = sorted(
-                movies.items(),
-                key=lambda x: x[1]["released"] or "",
-                reverse=True,
-            )
-        else:
-            sorted_movies = sorted(
-                movies.items(), key=lambda x: x[1]["total_showtimes"], reverse=True
-            )
 
         first_table = None
-        for movie_name, movie_data in sorted_movies:
-            table = MovieTable(
-                movie_name,
-                movie_data["duration"],
-                dict(movie_data["showtimes_by_date"]),
-                movie_data,
-            )
-            scroll_container.mount(table)
-            if first_table is None:
-                first_table = table
+
+        for theater_name, theater_info in self.theaters_data.items():
+            theater = theater_info["theater"]
+            shows_data = theater_info["shows_data"]
+            movies_data = theater_info["movies_data"]
+
+            scroll_container.mount(TheaterHeader(theater_name))
+
+            if not shows_data or "shows" not in shows_data:
+                error_msg = "No showtimes available."
+                if shows_data and "error" in shows_data:
+                    error_msg += f"\nError: {shows_data['error']}"
+                scroll_container.mount(Label(error_msg))
+                continue
+
+            shows = shows_data["shows"]
+
+            if not shows:
+                scroll_container.mount(Label("No showtimes available."))
+                continue
+
+            movies: dict[str, dict[str, Any]] = {}
+            for show in shows:
+                movie_name = show["name"]
+
+                if self.config.should_filter_movie(movie_name, theater):
+                    continue
+
+                if movie_name not in movies:
+                    movie_id = str(show.get("movieId", ""))
+                    movie_details = movies_data.get(movie_id, {})
+                    released = movie_details.get("released") or show.get("released") or ""
+                    movies[movie_name] = {
+                        "name": movie_name,
+                        "duration": show["duration"],
+                        "showtimes_by_date": defaultdict(list),
+                        "total_showtimes": 0,
+                        "released": released,
+                        "movieId": movie_id,
+                        "details": movie_details,
+                    }
+                movies[movie_name]["showtimes_by_date"][show["date"]].append(show)
+                movies[movie_name]["total_showtimes"] += 1
+
+            if self.sort_by_release:
+                sorted_movies = sorted(
+                    movies.items(),
+                    key=lambda x: x[1]["released"] or "",
+                    reverse=True,
+                )
+            else:
+                sorted_movies = sorted(
+                    movies.items(), key=lambda x: x[1]["total_showtimes"], reverse=True
+                )
+
+            for movie_name, movie_data in sorted_movies:
+                table = MovieTable(
+                    movie_name,
+                    movie_data["duration"],
+                    dict(movie_data["showtimes_by_date"]),
+                    movie_data,
+                )
+                scroll_container.mount(table)
+                if first_table is None:
+                    first_table = table
 
         if first_table is not None:
             self.set_focus(first_table)
