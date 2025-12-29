@@ -13,6 +13,7 @@ from textual.containers import Container, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Footer, Header, Input, Label, Static
 
+from .cache import Cache
 from .config import Config, Theater
 
 
@@ -500,6 +501,7 @@ class MovieShowtimesApp(App[None]):
     def __init__(self) -> None:
         self.config = Config.load()
         self.theaters = self.config.theaters
+        self.cache = Cache()
         super().__init__()
         self.title = "Kinostar - Showtimes"
         self.theaters_data: dict[str, dict[str, Any]] = {}
@@ -521,6 +523,10 @@ class MovieShowtimesApp(App[None]):
         self, client: httpx.AsyncClient, theater: Theater
     ) -> tuple[Theater, dict[str, Any]]:
         """Fetch showtimes for a single theater."""
+        cached_data = self.cache.get("showtimes", theater.cinema_id)
+        if cached_data is not None:
+            return theater, cached_data
+
         url = "https://www.kinoheld.de/ajax/getShowsForCinemas"
         params = {"cinemaIds[]": str(theater.cinema_id), "lang": "de"}
         headers = {
@@ -540,9 +546,11 @@ class MovieShowtimesApp(App[None]):
             response = await client.get(url, params=params, headers=headers)
             response.raise_for_status()
             data = response.json()
+            self.cache.set("showtimes", data, theater.cinema_id)
             return theater, data
         except Exception as e:
-            return theater, {"shows": [], "error": str(e), "movies": {}}
+            error_data = {"shows": [], "error": str(e), "movies": {}}
+            return theater, error_data
 
     async def load_showtimes(self) -> None:
         """Fetch showtimes from the API for all theaters."""
@@ -741,6 +749,10 @@ class MovieShowtimesApp(App[None]):
 
     async def search_theaters_by_city(self, city: str) -> list[dict[str, Any]]:
         """Search for theaters using the Kinoheld GraphQL API."""
+        cached_results = self.cache.get("theater_search", city.lower())
+        if cached_results is not None:
+            return cached_results
+
         url = "https://next-live.kinoheld.de/graphql"
 
         graphql_query = """
@@ -861,9 +873,11 @@ class MovieShowtimesApp(App[None]):
                 response.raise_for_status()
                 data = response.json()
                 results = data.get("data", {}).get("search", [])
+                self.cache.set("theater_search", results, city.lower())
                 return results
             except Exception as e:
-                return [{"error": str(e)}]
+                error_results = [{"error": str(e)}]
+                return error_results
 
     def action_search_theaters(self) -> None:
         """Open the search modal to find theaters by city."""
